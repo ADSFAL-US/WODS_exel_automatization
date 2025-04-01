@@ -1,3 +1,4 @@
+#pylint:disable=//github.com/pylint-dev/pylint/pull/3578.
 from database import DatabaseHandler
 from gui import ApplicationGUI
 import tkinter as tk

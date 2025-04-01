@@ -1,91 +1,231 @@
+#pylint:disable=//github.com/pylint-dev/pylint/pull/3578.
 import tkinter as tk
 from tkinter import messagebox
 
 class ApplicationGUI:
+    DARK_THEME = {
+        "bg": "#2e2e2e",
+        "fg": "#ffffff",
+        "entry_bg": "#404040",
+        "button_bg": "#3e3e3e",
+        "button_active_bg": "#5e5e5e",
+        "header_bg": "#1e1e1e",
+        "scrollbar_bg": "#3e3e3e",
+        "error_bg": "#5e1e1e",
+        "success_green": "#2e5e2e",
+        "error_red": "#5e2e2e"
+    }
+
     def __init__(self, root, db_handler):
+        self.column_widths = [50, 150, 100, 80, 80, 80, 80, 80]  # Добавить эту строку
         self.root = root
         self.db = db_handler
         self.entries = []
         self.setup_ui()
+        
+        
 
-    def setup_ui(self):
-        self.root.geometry("1280x800")
-        self.create_scrollable_area()
-        self.create_buttons_frame()  # Новый метод для кнопок
-        self.create_table()
-        self.create_commit_button()
+    # Модифицируем следующие методы:
 
     def create_scrollable_area(self):
-        # Основной контейнер
-        self.main_frame = tk.Frame(self.root)
+        self.main_frame = tk.Frame(self.root, bg=self.DARK_THEME["bg"])
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Холст и скроллбар
-        self.canvas = tk.Canvas(self.main_frame, width=1600)
-        self.scrollbar = tk.Scrollbar(self.main_frame, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        # Создаем прокрутки первыми
+        self.x_scrollbar = tk.Scrollbar(
+            self.main_frame,
+            orient="horizontal",
+            bg=self.DARK_THEME["scrollbar_bg"],
+            troughcolor=self.DARK_THEME["bg"]
+        )
+        self.y_scrollbar = tk.Scrollbar(
+            self.main_frame,
+            orient="vertical",
+            bg=self.DARK_THEME["scrollbar_bg"],
+            troughcolor=self.DARK_THEME["bg"]
+        )
 
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Холст с привязкой к прокруткам
+        self.canvas = tk.Canvas(
+            self.main_frame,
+            bg=self.DARK_THEME["bg"],
+            highlightthickness=0,
+            yscrollcommand=self.y_scrollbar.set,
+            xscrollcommand=self.x_scrollbar.set
+        )
+
+        # Настройка прокруток
+        self.x_scrollbar.config(command=self.canvas.xview)
+        self.y_scrollbar.config(command=self.canvas.yview)
+
+        # Упаковка элементов
+        self.y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Фрейм для таблицы
-        self.table_frame = tk.Frame(self.canvas)
-        self.canvas.create_window((0, 0), window=self.table_frame, anchor=tk.NW)
+        # Фрейм для таблицы ВНУТРИ холста
+        self.table_frame = tk.Frame(self.canvas, bg=self.DARK_THEME["bg"])
+        self.canvas.create_window((0, 0), window=self.table_frame, anchor="nw")
 
-        # Привязка событий
-        self.table_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
-
+        # Критически важный бинд!
+        self.table_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+    
     def create_table(self):
         columns = ['ID', 'Username', 'Rank', 'Kills', 'Deads', 'K/D', 'To Main', 'Actions']
-        
-        # Заголовки
+        column_widths = [50, 150, 100, 80, 80, 80, 80, 80]
+    
+        # 1. Очистка предыдущих данных (если есть)
+        for widget in self.table_frame.winfo_children():
+            widget.destroy()
+    
+        # 2. Настройка колонок
+        for col in range(8):
+            self.table_frame.grid_columnconfigure(
+                col, 
+                minsize=column_widths[col], 
+                weight=1 if col not in [0,7] else 0
+            )
+    
+        # 3. Заголовки
         for col, name in enumerate(columns):
-            header = tk.Entry(self.table_frame, relief=tk.GROOVE, font=('Arial', 10, 'bold'))
-            header.grid(row=0, column=col, sticky=tk.NSEW)
+            header = tk.Entry(
+                self.table_frame,
+                width=column_widths[col]//10,
+                relief=tk.GROOVE,
+                font=('Arial', 10, 'bold'),
+                bg=self.DARK_THEME["header_bg"],
+                fg=self.DARK_THEME["fg"],
+                readonlybackground=self.DARK_THEME["header_bg"]
+            )
+            header.grid(row=0, column=col, sticky="nsew", pady=1)  # Добавлен pady
             header.insert(tk.END, name)
             header.config(state='readonly')
-            if col == len(columns)-1:  # Последний столбец
-                header.config(width=10)
-
-        # Данные
+    
+        # 4. Данные таблицы
         data = self.db.fetch_all_users()
+        print(f"Загружено записей: {len(data)}")  # Отладочный вывод
+    
         for row_idx, user in enumerate(data, start=1):
             self.create_table_row(row_idx, user)
+            self.table_frame.grid_rowconfigure(row_idx, weight=1)  # Важная строка!
+    
+        # 5. Принудительное обновление
+        self.table_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def create_table_row(self, row_idx, user_data):
         row_entries = []
-        for col in range(7):  # Основные колонки
-            e = tk.Entry(self.table_frame, relief=tk.GROOVE)
-            e.grid(row=row_idx, column=col, sticky=tk.NSEW)
+        print(f"Данные строки {row_idx}: {user_data}")  # Отладочный вывод
+        
+        for col in range(7):
+            e = tk.Entry(
+                self.table_frame,
+                width=self.column_widths[col]//10,
+                relief=tk.GROOVE,
+                bg=self.DARK_THEME["entry_bg"],
+                fg=self.DARK_THEME["fg"],
+                insertbackground=self.DARK_THEME["fg"]
+            )
+            e.grid(row=row_idx, column=col, sticky="nsew", padx=1, pady=1)
             
-            value = user_data[col]
+            value = user_data[col]  # Индексы 0-6: id, username, ..., to_main
+            
             if col == 5:  # K/D
-                e.insert(tk.END, f"{value:.2f}")
+                e.insert(tk.END, f"{float(value):.2f}")
                 e.config(state='readonly')
-            elif col == 6:  # To Main
-                display_value = "+" if value else "-"
+            elif col == 6:  # To Main (булево значение)
+                display_value = "+" if bool(value) else "-"
                 e.insert(tk.END, display_value)
                 e.config(state='readonly')
             else:
-                e.insert(tk.END, value)
+                e.insert(tk.END, str(value))
                 if col in [3, 4]:  # Kills/Deads
                     e.bind("<KeyRelease>", lambda event, r=row_idx: self.update_row_data(r))
 
             row_entries.append(e)
 
-        # Кнопка удаления
+        # Кнопка удаления (исправленная команда)
         delete_btn = tk.Button(
             self.table_frame,
             text="-",
             font=('Arial', 12, 'bold'),
-            width=3,
-            command=lambda uid=user_data[0]: self.delete_user_warning(uid)
+            bg=self.DARK_THEME["error_red"],
+            fg=self.DARK_THEME["fg"],
+            activebackground="#7e3e3e",
+            command=lambda uid=user_data[0]: self.delete_user_warning(uid)  # user_data[0] = id
         )
-        delete_btn.grid(row=row_idx, column=7, padx=0, pady=1, sticky="nesw")
+        delete_btn.grid(row=row_idx, column=7, sticky="nsew", padx=2, pady=1)
         row_entries.append(delete_btn)
         
         self.entries.append(row_entries)
+
+    def refresh_table(self):
+        """Обновление данных из БД"""
+        for widget in self.table_frame.winfo_children():
+            widget.destroy()
+        self.entries = []
+        self.create_table()
+        self.canvas.yview_moveto(0)
+       
+
+    # В метод setup_ui добавляем:
+    def setup_ui(self):
+        self.root.configure(bg=self.DARK_THEME["bg"])
+        self.root.geometry("1280x800")
+    
+        # Сначала создаем scrollable area
+        self.create_scrollable_area()
+    
+        # Затем создаем остальные элементы
+        self.create_buttons_frame()
+        self.create_table()
+        self.create_commit_button()
+
+    def create_buttons_frame(self):
+        self.buttons_frame = tk.Frame(self.root, bg=self.DARK_THEME["bg"])
+        self.buttons_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
+        
+        self.add_btn = tk.Button(
+            self.buttons_frame,
+            text="+ Добавить нового пользователя",
+            font=('Arial', 12, 'bold'),
+            bg=self.DARK_THEME["success_green"],
+            fg=self.DARK_THEME["fg"],
+            activebackground="#1e3e1e",
+            relief=tk.FLAT,
+            command=self.add_new_user
+        )
+        self.add_btn.pack(side=tk.LEFT, padx=10)
+
+    def create_commit_button(self):
+        commit_btn = tk.Button(
+            self.buttons_frame,
+            text="💾|COMMIT|💾", 
+            bg=self.DARK_THEME["error_red"],
+            activebackground="#3e2e2e",
+            fg=self.DARK_THEME["fg"],
+            command=self.commit_changes
+        )
+        commit_btn.pack(side=tk.LEFT, padx=10)
+
+    # Остальные методы остаются без изменений (как в оригинале), кроме handle_update_error:
+    def handle_update_error(self, row):
+        for col in [5, 6]:
+            self.entries[row][col].config(
+                bg=self.DARK_THEME["error_bg"],
+                fg="#ff6666",
+                state='normal'
+            )
+            self.entries[row][col].delete(0, tk.END)
+            self.entries[row][col].insert(0, "Error")
+            self.entries[row][col].config(state='readonly')
+
+    # Остальные методы (delete_user_warning, add_new_user, refresh_table, update_row_data, commit_changes) 
+    # остаются без изменений, как в исходном файле
+    
 
     def delete_user_warning(self, user_id):
         if messagebox.askyesno(
@@ -127,7 +267,7 @@ class ApplicationGUI:
             kills = int(self.entries[row-1][3].get())
             deads = int(self.entries[row-1][4].get())
             kd = kills / deads if deads != 0 else 0.0
-            to_main = "+" if kd > 0.6 else "-"
+            to_main = "+" if kd > 0.75 else "-"
 
             # Update K/D
             self.entries[row-1][5].config(state='normal')
@@ -144,38 +284,8 @@ class ApplicationGUI:
         except (ValueError, ZeroDivisionError):
             self.handle_update_error(row-1)
             
-    def create_buttons_frame(self):
-        self.buttons_frame = tk.Frame(self.root)
-        self.buttons_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
-        
-        # Кнопка добавления
-        self.add_btn = tk.Button(
-            self.buttons_frame,
-            text="+ Добавить нового пользователя",
-            font=('Arial', 12, 'bold'),
-            bg='#4CAF50',
-            fg='white',
-            relief=tk.FLAT,
-            command=self.add_new_user
-        )
-        self.add_btn.pack(side=tk.LEFT, padx=10)
 
-    def handle_update_error(self, row):
-        for col in [5, 6]:
-            self.entries[row][col].config(state='normal')
-            self.entries[row][col].delete(0, tk.END)
-            self.entries[row][col].insert(0, "Error")
-            self.entries[row][col].config(state='readonly')
 
-    def create_commit_button(self):
-        commit_btn = tk.Button(
-            self.buttons_frame,  # Перенесено в buttons_frame
-            text="💾|COMMIT|💾", 
-            bg="#de4d2c", 
-            activebackground="#30d146", 
-            command=self.commit_changes
-        )
-        commit_btn.pack(side=tk.LEFT, padx=10)
         
     def commit_changes(self):
         for row in self.entries:

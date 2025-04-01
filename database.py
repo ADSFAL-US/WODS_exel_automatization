@@ -1,3 +1,4 @@
+#pylint:disable=//github.com/pylint-dev/pylint/pull/3578.
 import sqlite3
 import random
 
