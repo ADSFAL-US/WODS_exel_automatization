@@ -4,6 +4,7 @@ from gui import ApplicationGUI
 import tkinter as tk
 
 def main():
+    print("for use OCR install tesseract programm. https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe")
     # Инициализация базы данных
     db = DatabaseHandler()
     #db.insert_example_data(1)  # Добавляем один пример

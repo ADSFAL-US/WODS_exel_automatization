@@ -1,11 +1,13 @@
 #pylint:disable=//github.com/pylint-dev/pylint/pull/3578.
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog, messagebox
+from myOCR import OCRProcessor
 
 class ApplicationGUI:
     DARK_THEME = {
         "bg": "#2e2e2e",
         "fg": "#ffffff",
+        "whitefg": "#d91616",
         "entry_bg": "#404040",
         "button_bg": "#3e3e3e",
         "button_active_bg": "#5e5e5e",
@@ -22,9 +24,8 @@ class ApplicationGUI:
         self.db = db_handler
         self.entries = []
         self.setup_ui()
+        self.ocr_processor = OCRProcessor()
         
-        
-
     # Модифицируем следующие методы:
 
     def create_scrollable_area(self):
@@ -135,11 +136,11 @@ class ApplicationGUI:
             
             if col == 5:  # K/D
                 e.insert(tk.END, f"{float(value):.2f}")
-                e.config(state='readonly')
+                e.config(state='readonly', fg=self.DARK_THEME["whitefg"])
             elif col == 6:  # To Main (булево значение)
                 display_value = "+" if bool(value) else "-"
                 e.insert(tk.END, display_value)
-                e.config(state='readonly')
+                e.config(state='readonly', fg=self.DARK_THEME["whitefg"])
             else:
                 e.insert(tk.END, str(value))
                 if col in [3, 4]:  # Kills/Deads
@@ -183,6 +184,7 @@ class ApplicationGUI:
         self.create_buttons_frame()
         self.create_table()
         self.create_commit_button()
+        self.create_ocr_button()
 
     def create_buttons_frame(self):
         self.buttons_frame = tk.Frame(self.root, bg=self.DARK_THEME["bg"])
@@ -199,6 +201,18 @@ class ApplicationGUI:
             command=self.add_new_user
         )
         self.add_btn.pack(side=tk.LEFT, padx=10)
+        
+    def create_ocr_button(self):
+        
+        ocr_button = tk.Button(
+            self.buttons_frame,
+            text="upload OCR image",
+            bg=self.DARK_THEME["error_red"],
+            activebackground="#3e2e2e",
+            fg=self.DARK_THEME["fg"],
+            command=self.uploadOCR
+        )
+        ocr_button.pack(side="left",padx=10)
 
     def create_commit_button(self):
         commit_btn = tk.Button(
@@ -210,6 +224,41 @@ class ApplicationGUI:
             command=self.commit_changes
         )
         commit_btn.pack(side=tk.LEFT, padx=10)
+        
+    def uploadOCR(self):
+        file_path = filedialog.askopenfilename(
+            title="Выберите изображение",
+            filetypes=(
+                ("Изображения", "*.png *.jpg *.jpeg *.bmp *.tiff"),
+                ("Все файлы", "*.*")
+            )
+        )
+        
+        if file_path:
+            self.current_image_path = file_path
+            self.recognize_text()
+            
+    def recognize_text(self):
+        if not hasattr(self, 'current_image_path'):
+            return
+            
+        try:
+            # Показываем индикатор выполнения
+            self.root.config(cursor='watch')
+            self.root.update()
+            
+            # Выполняем распознавание
+            
+            recognized_text = self.ocr_processor.recognize(
+                self.current_image_path
+            )
+            
+            print(recognized_text)
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка распознавания: {str(e)}")
+        finally:
+            self.root.config(cursor='')
 
     # Остальные методы остаются без изменений (как в оригинале), кроме handle_update_error:
     def handle_update_error(self, row):
@@ -235,20 +284,10 @@ class ApplicationGUI:
         ):
             self.db.delete_user(user_id)
             self.refresh_table()
-
-    def create_add_button(self):
-        add_btn = tk.Button(
-            self.table_frame,
-            width=100,
-            text="+ Добавить нового пользователя",
-            font=('Arial', 12, 'bold'),
-            bg='#4CAF50',
-            fg='white',
-            relief=tk.FLAT,
-            command=self.add_new_user
-        )
-        add_btn.grid(ipadx=5, ipady=5, column = 0, columnspan = 5)
-        #-column, -columnspan, -in, -ipadx, -ipady, -padx, -pady, -row, -rowspan, or -sticky
+        
+    def createOCRButton(self):
+        ocrbutton = tk.Button(text="^upload screenshot^")
+        ocrbutton.pack(side="bottom", anchor="w")
 
     def add_new_user(self):
         self.db.create_new_user()
