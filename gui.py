@@ -1,347 +1,325 @@
-#pylint:disable=//github.com/pylint-dev/pylint/pull/3578.
+# gui.py
 import tkinter as tk
-from tkinter import messagebox, filedialog, messagebox
-from myOCR import OCRProcessor
+from tkinter import messagebox, filedialog
+from typing import Dict, List, Tuple, Any
+from myOCR_test import OCRApp, CropWindow
+from database import DatabaseHandler
 
-class ApplicationGUI:
+class ThemeManager:
+    """Управление стилями интерфейса"""
     DARK_THEME = {
         "bg": "#2e2e2e",
         "fg": "#ffffff",
-        "whitefg": "#d91616",
         "entry_bg": "#404040",
         "button_bg": "#3e3e3e",
         "button_active_bg": "#5e5e5e",
         "header_bg": "#1e1e1e",
         "scrollbar_bg": "#3e3e3e",
-        "error_bg": "#5e1e1e",
+        "error_red": "#5e2e2e",
         "success_green": "#2e5e2e",
-        "error_red": "#5e2e2e"
+        "error_fg": "#ff6666",
+        "header_fg": "#ffffff",  # Белый текст заголовков
+        "readonly_fg": "#a0a0a0"
     }
-
-    def __init__(self, root, db_handler):
-        self.column_widths = [50, 150, 100, 80, 80, 80, 80, 80]  # Добавить эту строку
-        self.root = root
-        self.db = db_handler
-        self.entries = []
-        self.setup_ui()
-        self.ocr_processor = OCRProcessor()
-        
-    # Модифицируем следующие методы:
-
-    def create_scrollable_area(self):
-        self.main_frame = tk.Frame(self.root, bg=self.DARK_THEME["bg"])
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Создаем прокрутки первыми
-        self.x_scrollbar = tk.Scrollbar(
-            self.main_frame,
-            orient="horizontal",
-            bg=self.DARK_THEME["scrollbar_bg"],
-            troughcolor=self.DARK_THEME["bg"]
-        )
-        self.y_scrollbar = tk.Scrollbar(
-            self.main_frame,
-            orient="vertical",
-            bg=self.DARK_THEME["scrollbar_bg"],
-            troughcolor=self.DARK_THEME["bg"]
-        )
-
-        # Холст с привязкой к прокруткам
-        self.canvas = tk.Canvas(
-            self.main_frame,
-            bg=self.DARK_THEME["bg"],
-            highlightthickness=0,
-            yscrollcommand=self.y_scrollbar.set,
-            xscrollcommand=self.x_scrollbar.set
-        )
-
-        # Настройка прокруток
-        self.x_scrollbar.config(command=self.canvas.xview)
-        self.y_scrollbar.config(command=self.canvas.yview)
-
-        # Упаковка элементов
-        self.y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Фрейм для таблицы ВНУТРИ холста
-        self.table_frame = tk.Frame(self.canvas, bg=self.DARK_THEME["bg"])
-        self.canvas.create_window((0, 0), window=self.table_frame, anchor="nw")
-
-        # Критически важный бинд!
-        self.table_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
     
-    def create_table(self):
-        columns = ['ID', 'Username', 'Rank', 'Kills', 'Deads', 'K/D', 'To Main', 'Actions']
-        column_widths = [50, 150, 100, 80, 80, 80, 80, 80]
-    
-        # 1. Очистка предыдущих данных (если есть)
-        for widget in self.table_frame.winfo_children():
-            widget.destroy()
-    
-        # 2. Настройка колонок
-        for col in range(8):
-            self.table_frame.grid_columnconfigure(
-                col, 
-                minsize=column_widths[col], 
-                weight=1 if col not in [0,7] else 0
+    @classmethod
+    def apply_theme(cls, widget: tk.Widget, element_type: str) -> None:
+        colors = cls.DARK_THEME
+        if isinstance(widget, tk.Button):
+            widget.config(
+                bg=colors["button_bg"],
+                fg=colors["fg"],
+                activebackground=colors["button_active_bg"]
             )
+        elif isinstance(widget, tk.Entry):
+            widget.config(
+                bg=colors["entry_bg"],
+                fg=colors["fg"],
+                insertbackground=colors["fg"]
+            )
+            if widget['state'] == 'readonly':
+                widget.config(
+                fg=cls.DARK_THEME["readonly_fg"],
+                disabledbackground=cls.DARK_THEME["entry_bg"]
+            )
+        if element_type == "header":
+            widget.config(
+                bg=cls.DARK_THEME["header_bg"],
+                fg=cls.DARK_THEME["header_fg"],  # Цвет текста
+                state="readonly"
+            )
+        elif isinstance(widget, tk.Entry) and widget["state"] == "readonly":
+            widget.config(
+                fg=cls.DARK_THEME["readonly_fg"],  # Серый текст
+                disabledbackground=cls.DARK_THEME["entry_bg"]
+            )
+
+class TableWidget(tk.Frame):
+    """Кастомизированный виджет таблицы"""
     
-        # 3. Заголовки
-        for col, name in enumerate(columns):
+    def __init__(self, master, db_handler: DatabaseHandler):
+        super().__init__(master)
+        self.db = db_handler
+        self.columns = ('ID', 'Username', 'Rank', 'Kills', 'Deads', 'K/D', 'To Main', 'Actions')  # Добавлено явное определение
+        self.column_widths = [50, 150, 100, 80, 80, 80, 80, 80]
+        self._setup_table()
+
+    def _setup_table(self) -> None:
+        """Инициализация компонентов таблицы"""
+        self.canvas = tk.Canvas(self, bg=ThemeManager.DARK_THEME["bg"])
+        scroll_x = tk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        scroll_y = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        
+        self.table_frame = tk.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.table_frame, anchor="nw")
+        
+        # Конфигурация прокрутки
+        self.canvas.configure(
+            xscrollcommand=scroll_x.set,
+            yscrollcommand=scroll_y.set
+        )
+        
+        # Упаковка элементов
+        scroll_x.pack(side="bottom", fill="x")
+        scroll_y.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        self.table_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self._create_headers()
+        self.refresh()
+
+    def _create_headers(self) -> None:
+        """Создание заголовков с правильными стилями"""
+        for col, (name, width) in enumerate(zip(self.columns, self.column_widths)):
             header = tk.Entry(
                 self.table_frame,
-                width=column_widths[col]//10,
-                relief=tk.GROOVE,
-                font=('Arial', 10, 'bold'),
-                bg=self.DARK_THEME["header_bg"],
-                fg=self.DARK_THEME["fg"],
-                readonlybackground=self.DARK_THEME["header_bg"]
+                width=width//10,
+                relief="groove",
+                font=('Arial', 10, 'bold')
             )
-            header.grid(row=0, column=col, sticky="nsew", pady=1)  # Добавлен pady
-            header.insert(tk.END, name)
-            header.config(state='readonly')
-    
-        # 4. Данные таблицы
-        data = self.db.fetch_all_users()
-        print(f"Загружено записей: {len(data)}")  # Отладочный вывод
-    
-        for row_idx, user in enumerate(data, start=1):
-            self.create_table_row(row_idx, user)
-            self.table_frame.grid_rowconfigure(row_idx, weight=1)  # Важная строка!
-    
-        # 5. Принудительное обновление
-        self.table_frame.update_idletasks()
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+            header.config(
+                bg=ThemeManager.DARK_THEME["header_bg"],
+                fg=ThemeManager.DARK_THEME["header_fg"],
+                state="readonly"
+            )
+            header.grid(row=0, column=col, sticky="nsew", pady=1)
+            header.insert("end", name)
 
-    def create_table_row(self, row_idx, user_data):
-        row_entries = []
-        print(f"Данные строки {row_idx}: {user_data}")  # Отладочный вывод
-        
+
+    def refresh(self) -> None:
+        """Пересоздание таблицы с очисткой виджетов"""
+        for widget in self.table_frame.winfo_children():
+            widget.destroy()  # Полная очистка перед обновлением
+        self._create_headers()
+        self._load_data()
+
+    def _create_row(self, row_idx: int, user_data: Tuple) -> None:
+        entries = []
+        user_id = user_data[0]
         for col in range(7):
-            e = tk.Entry(
-                self.table_frame,
-                width=self.column_widths[col]//10,
-                relief=tk.GROOVE,
-                bg=self.DARK_THEME["entry_bg"],
-                fg=self.DARK_THEME["fg"],
-                insertbackground=self.DARK_THEME["fg"]
+            
+            entry = tk.Entry(self.table_frame, width=self.column_widths[col]//10)
+            ThemeManager.apply_theme(entry, "entry")
+            entry.grid(row=row_idx, column=col, sticky="nsew", padx=1, pady=1)
+            
+            value = self._format_value(col, user_data[col])
+            entry.insert("end", value)
+            
+            if col in (3, 4):  # Поля Kills/Deads
+                entry.bind("<KeyRelease>", lambda e, r=row_idx: self._update_kd(r))
+            elif col in (5, 6):  # Поля K/D и To Main
+                entry.config(state="readonly")
+            
+            entries.append(entry)
+        self._add_delete_button(row_idx, user_id)
+    
+    def _update_kd(self, row_idx: int) -> None:
+        """Исправленный расчет K/D"""
+        try:
+            # Получаем элементы через grid_slaves
+            kills_entry = self.table_frame.grid_slaves(row=row_idx, column=3)[0]
+            deads_entry = self.table_frame.grid_slaves(row=row_idx, column=4)[0]
+            
+            kills = int(kills_entry.get())
+            deads = int(deads_entry.get())
+            
+            kd = kills / deads if deads != 0 else 0.0
+            kd_entry = self.table_frame.grid_slaves(row=row_idx, column=5)[0]
+            
+            kd_entry.config(state="normal")
+            kd_entry.delete(0, "end")
+            kd_entry.insert(0, f"{kd:.2f}")
+            kd_entry.config(
+                state="readonly",
+                fg=ThemeManager.DARK_THEME["readonly_fg"]  # Явное указание цвета
             )
-            e.grid(row=row_idx, column=col, sticky="nsew", padx=1, pady=1)
-            
-            value = user_data[col]  # Индексы 0-6: id, username, ..., to_main
-            
-            if col == 5:  # K/D
-                e.insert(tk.END, f"{float(value):.2f}")
-                e.config(state='readonly', fg=self.DARK_THEME["whitefg"])
-            elif col == 6:  # To Main (булево значение)
-                display_value = "+" if bool(value) else "-"
-                e.insert(tk.END, display_value)
-                e.config(state='readonly', fg=self.DARK_THEME["whitefg"])
-            else:
-                e.insert(tk.END, str(value))
-                if col in [3, 4]:  # Kills/Deads
-                    e.bind("<KeyRelease>", lambda event, r=row_idx: self.update_row_data(r))
+        except (IndexError, ValueError, ZeroDivisionError):
+            pass
 
-            row_entries.append(e)
+    def _format_value(self, col: int, value: Any) -> str:
+        """Форматирование значений для отображения"""
+        if col == 5:  # K/D
+            return f"{float(value):.2f}"
+        if col == 6:  # To Main
+            return "+" if value else "-"
+        return str(value)
 
-        # Кнопка удаления (исправленная команда)
-        delete_btn = tk.Button(
+    def _add_delete_button(self, row: int, user_id: int) -> None:
+        """Исправленная кнопка удаления с фиксацией ID"""
+        btn = tk.Button(
             self.table_frame,
             text="-",
             font=('Arial', 12, 'bold'),
-            bg=self.DARK_THEME["error_red"],
-            fg=self.DARK_THEME["fg"],
-            activebackground="#7e3e3e",
-            command=lambda uid=user_data[0]: self.delete_user_warning(uid)  # user_data[0] = id
+            command=lambda uid=user_id: self._delete_user(uid)  # Фиксация ID в лямбде
         )
-        delete_btn.grid(row=row_idx, column=7, sticky="nsew", padx=2, pady=1)
-        row_entries.append(delete_btn)
-        
-        self.entries.append(row_entries)
+        ThemeManager.apply_theme(btn, "button")
+        btn.grid(row=row, column=7, sticky="nsew", padx=2, pady=1)
 
-    def refresh_table(self):
-        """Обновление данных из БД"""
-        for widget in self.table_frame.winfo_children():
-            widget.destroy()
-        self.entries = []
-        self.create_table()
-        self.canvas.yview_moveto(0)
-       
+    def _delete_user(self, user_id: int) -> None:
+        """Удаление с подтверждением и принудительным обновлением"""
+        if messagebox.askyesno("Подтверждение", "Удалить игрока?", parent=self):
+            try:
+                self.db.delete_user(user_id)
+                self.refresh()  # Явное обновление таблицы
+                print(f"Удален пользователь с ID: {user_id}")  # Отладочный вывод
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось удалить: {str(e)}")
+                
+    def _load_data(self) -> None:
+        """Загрузка данных из БД"""
+        data = self.db.fetch_all_users()
+        for row_idx, user in enumerate(data, start=1):
+            self._create_row(row_idx, user)
 
-    # В метод setup_ui добавляем:
-    def setup_ui(self):
-        self.root.configure(bg=self.DARK_THEME["bg"])
-        self.root.geometry("1280x800")
+class OCRDialogHandler:
+    """Обработчик диалогов OCR"""
     
-        # Сначала создаем scrollable area
-        self.create_scrollable_area()
-    
-        # Затем создаем остальные элементы
-        self.create_buttons_frame()
-        self.create_table()
-        self.create_commit_button()
-        self.create_ocr_button()
-
-    def create_buttons_frame(self):
-        self.buttons_frame = tk.Frame(self.root, bg=self.DARK_THEME["bg"])
-        self.buttons_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
-        
-        self.add_btn = tk.Button(
-            self.buttons_frame,
-            text="+ Добавить нового пользователя",
-            font=('Arial', 12, 'bold'),
-            bg=self.DARK_THEME["success_green"],
-            fg=self.DARK_THEME["fg"],
-            activebackground="#1e3e1e",
-            relief=tk.FLAT,
-            command=self.add_new_user
-        )
-        self.add_btn.pack(side=tk.LEFT, padx=10)
-        
-    def create_ocr_button(self):
-        
-        ocr_button = tk.Button(
-            self.buttons_frame,
-            text="upload OCR image",
-            bg=self.DARK_THEME["error_red"],
-            activebackground="#3e2e2e",
-            fg=self.DARK_THEME["fg"],
-            command=self.uploadOCR
-        )
-        ocr_button.pack(side="left",padx=10)
-
-    def create_commit_button(self):
-        commit_btn = tk.Button(
-            self.buttons_frame,
-            text="💾|COMMIT|💾", 
-            bg=self.DARK_THEME["error_red"],
-            activebackground="#3e2e2e",
-            fg=self.DARK_THEME["fg"],
-            command=self.commit_changes
-        )
-        commit_btn.pack(side=tk.LEFT, padx=10)
-        
-    def uploadOCR(self):
-        file_path = filedialog.askopenfilename(
-            title="Выберите изображение",
-            filetypes=(
-                ("Изображения", "*.png *.jpg *.jpeg *.bmp *.tiff"),
-                ("Все файлы", "*.*")
-            )
-        )
-        
-        if file_path:
-            self.current_image_path = file_path
-            self.recognize_text()
-            
-    def recognize_text(self):
-        if not hasattr(self, 'current_image_path'):
+    @staticmethod
+    def process_ocr_image(parent: tk.Tk, db_handler: DatabaseHandler) -> None:
+        """Полный цикл обработки изображения"""
+        file_path = filedialog.askopenfilename(filetypes=[("Изображения", "*.png *.jpg *.jpeg")])
+        if not file_path:
             return
             
         try:
-            # Показываем индикатор выполнения
-            self.root.config(cursor='watch')
-            self.root.update()
+            crop_win = CropWindow(parent, file_path)
+            parent.wait_window(crop_win)
             
-            # Выполняем распознавание
-            
-            recognized_text = self.ocr_processor.recognize(
-                self.current_image_path
-            )
-            
-            print(recognized_text)
+            if not crop_win.cropped_img:
+                return
+                
+            OCRDialogHandler._process_and_show_results(parent, db_handler, file_path)
             
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка распознавания: {str(e)}")
-        finally:
-            self.root.config(cursor='')
+            messagebox.showerror("Ошибка OCR", str(e))
 
-    # Остальные методы остаются без изменений (как в оригинале), кроме handle_update_error:
-    def handle_update_error(self, row):
-        for col in [5, 6]:
-            self.entries[row][col].config(
-                bg=self.DARK_THEME["error_bg"],
-                fg="#ff6666",
-                state='normal'
-            )
-            self.entries[row][col].delete(0, tk.END)
-            self.entries[row][col].insert(0, "Error")
-            self.entries[row][col].config(state='readonly')
-
-    # Остальные методы (delete_user_warning, add_new_user, refresh_table, update_row_data, commit_changes) 
-    # остаются без изменений, как в исходном файле
+    @staticmethod
+    def _process_and_show_results(parent: tk.Tk, db: DatabaseHandler, path: str) -> None:
+        """Обработка и отображение результатов"""
+        processing_win = tk.Toplevel(parent)
+        processing_win.grab_set()
+        tk.Label(processing_win, text="Обработка...").pack(pady=20)
+        processing_win.after(100, lambda: OCRDialogHandler._finalize_processing(processing_win, db, path))
     
-
-    def delete_user_warning(self, user_id):
-        if messagebox.askyesno(
-            "Подтверждение удаления",
-            "Вы точно хотите удалить этого игрока?",
-            icon='warning'
-        ):
-            self.db.delete_user(user_id)
-            self.refresh_table()
-        
-    def createOCRButton(self):
-        ocrbutton = tk.Button(text="^upload screenshot^")
-        ocrbutton.pack(side="bottom", anchor="w")
-
-    def add_new_user(self):
-        self.db.create_new_user()
-        self.refresh_table()
-
-    def refresh_table(self):
-        """Полная перерисовка таблицы"""
-        for widget in self.table_frame.winfo_children():
-            widget.destroy()
-        self.entries = []
-        self.create_table()
-        self.canvas.yview_moveto(0)
-
-    def update_row_data(self, row):
+    @staticmethod
+    def _finalize_processing(win: tk.Toplevel, db: DatabaseHandler, path: str) -> None:
+        """Финализация обработки OCR"""
         try:
-            kills = int(self.entries[row-1][3].get())
-            deads = int(self.entries[row-1][4].get())
-            kd = kills / deads if deads != 0 else 0.0
-            to_main = "+" if kd > 0.75 else "-"
+            ocr_app = OCRApp(win, path)
+            if ocr_app.processed_data:
+                OCRDialogHandler._update_database(db, ocr_app.processed_data)
+        finally:
+            win.destroy()
 
-            # Update K/D
-            self.entries[row-1][5].config(state='normal')
-            self.entries[row-1][5].delete(0, tk.END)
-            self.entries[row-1][5].insert(0, f"{kd:.2f}")
-            self.entries[row-1][5].config(state='readonly')
+    @staticmethod
+    def _update_database(db: DatabaseHandler, data: List[Dict]) -> None:
+        """Обновление базы данных на основе OCR"""
+        for player in data:
+            existing = db.find_user_by_name_or_ocr(player['name'])
+            if existing:
+                db.update_user_stats(existing[0], player['kills'], player['deaths'])
+            else:
+                db.cursor.execute('INSERT INTO Users (username, kills, deads) VALUES (?,?,?)',
+                               (player['name'], player['kills'], player['deaths']))
+        db.connection.commit()
 
-            # Update to_main
-            self.entries[row-1][6].config(state='normal')
-            self.entries[row-1][6].delete(0, tk.END)
-            self.entries[row-1][6].insert(0, to_main)
-            self.entries[row-1][6].config(state='readonly')
+class ApplicationGUI:
+    """Главное окно приложения"""
+    
+    def __init__(self, root: tk.Tk, db_handler: DatabaseHandler):
+        self.root = root
+        self.db = db_handler
+        self._setup_window()
+        self._create_widgets()
 
-        except (ValueError, ZeroDivisionError):
-            self.handle_update_error(row-1)
+    def _setup_window(self) -> None:
+        """Конфигурация основного окна"""
+        self.root.title("Player Statistics Manager")
+        self.root.geometry("1280x800")
+        ThemeManager.apply_theme(self.root, "root")
+
+    def _create_widgets(self) -> None:
+        """Создание интерфейса"""
+        self._create_control_panel()
+        self.table = TableWidget(self.root, self.db)
+        self.table.pack(fill="both", expand=True)
+
+    def _create_control_panel(self) -> None:
+        """Панель управления"""
+        control_frame = tk.Frame(self.root)
+        ThemeManager.apply_theme(control_frame, "frame")
+        control_frame.pack(fill="x", pady=5)
+        
+        buttons = [
+            ("+ Добавить", "#2e5e2e", self._add_user),
+            ("OCR Загрузка", "#5e2e2e", lambda: OCRDialogHandler.process_ocr_image(self.root, self.db)),
+            ("Сохранить", "#5e2e2e", self._commit_changes)
+        ]
+        
+        for text, color, command in buttons:
+            btn = tk.Button(control_frame, text=text, bg=color, command=command)
+            ThemeManager.apply_theme(btn, "button")
+            btn.pack(side="left", padx=10)
+
+    def _add_user(self) -> None:
+        """Добавление нового пользователя"""
+        self.db.create_new_user()
+        self.table.refresh()
+
+    def _commit_changes(self) -> None:
+        """Корректное сохранение данных с игнорированием кнопок"""
+        try:
+            rows = self.table.table_frame.grid_size()[1]
             
-
-
-        
-    def commit_changes(self):
-        for row in self.entries:
-            user_data = (
-                row[1].get(),  # username
-                row[2].get(),  # urank
-                int(row[3].get()),  # kills
-                int(row[4].get()),  # deads
-                float(row[5].get()),  # kills_deads
-                row[6].get() == "+",  # to_main
-                int(row[0].get())  # id
-            )
-            self.db.update_user(user_data)
-        print("Данные успешно сохранены!")
-        
-    def clear_table(self):
-        """Удаляет все виджеты таблицы"""
-        for widget in self.frame.winfo_children():
-            widget.destroy()
-        self.entries = []
+            for row_idx in range(1, rows):
+                row_data = []
+                # Проходим только по столбцам с данными (исключая кнопку Actions)
+                for col in range(len(self.table.columns) - 1):  
+                    widgets = self.table.table_frame.grid_slaves(row=row_idx, column=col)
+                    
+                    # Обрабатываем только Entry
+                    if widgets and isinstance(widgets[0], tk.Entry):
+                        row_data.append(widgets[0].get())
+                    else:
+                        row_data.append("0")  # Значение по умолчанию
+                
+                # Конвертация данных
+                try:
+                    db_data = (
+                        row_data[1],  # username
+                        row_data[2],  # urank
+                        int(row_data[3]),  # kills
+                        int(row_data[4]),  # deads
+                        float(row_data[5]),  # K/D
+                        row_data[6] == "+",  # to_main
+                        int(row_data[0])  # id
+                    )
+                    self.db.update_user(db_data)
+                except (ValueError, IndexError) as e:
+                    print(f"Ошибка конвертации: {str(e)}")
+                    continue
+            
+            messagebox.showinfo("Успех", "Данные сохранены")
+            self.table.refresh()
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка сохранения: {str(e)}")
