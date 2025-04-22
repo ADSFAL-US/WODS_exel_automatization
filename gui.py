@@ -205,7 +205,8 @@ class OCRDialogHandler:
             crop_win = CropWindow(parent, file_path)
             parent.wait_window(crop_win)
             
-            if not crop_win.cropped_img:
+
+            if crop_win.cropped_img is None or crop_win.cropped_img.size == 0:
                 return
                 
             OCRDialogHandler._process_and_show_results(parent, db_handler, file_path)

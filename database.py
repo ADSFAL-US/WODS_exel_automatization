@@ -89,8 +89,8 @@ class DatabaseHandler:
         for _ in range(count):
             example_k = random.randint(1, 1000)
             example_d = random.randint(1, 1000)
-            kd = example_k / example_d
-            to_main = kd > 0.5
+            kd = float(example_k) / float(example_d)
+            to_main = bool(kd > 0.75)
             
             try:
                 self.cursor.execute(self.INSERT_USER_SQL, (
