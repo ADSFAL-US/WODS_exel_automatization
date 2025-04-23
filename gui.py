@@ -113,9 +113,12 @@ class TableWidget(tk.Frame):
         self._create_headers()
         self._load_data()
 
-    def _create_row(self, row_idx: int, user_data: Tuple) -> None:
+    def _create_row(self, row_idx: int, user_data: Tuple, user_idx: int) -> None:
         entries = []
         user_id = user_data[0]
+        self._add_delete_button(row_idx, user_id)
+        user_data = list(user_data)
+        user_data[0] = user_idx
         for col in range(7):
             
             entry = tk.Entry(self.table_frame, width=self.column_widths[col]//10)
@@ -128,10 +131,10 @@ class TableWidget(tk.Frame):
             if col in (3, 4):  # Поля Kills/Deads
                 entry.bind("<KeyRelease>", lambda e, r=row_idx: self._update_kd(r))
             elif col in (5, 6):  # Поля K/D и To Main
-                entry.config(state="readonly")
+                entry.config(state="readonly", fg="#0c17eb")
             
             entries.append(entry)
-        self._add_delete_button(row_idx, user_id)
+        
     
     def _update_kd(self, row_idx: int) -> None:
         """Исправленный расчет K/D"""
@@ -189,14 +192,16 @@ class TableWidget(tk.Frame):
         """Загрузка данных из БД"""
         data = self.db.fetch_all_users()
         for row_idx, user in enumerate(data, start=1):
-            self._create_row(row_idx, user)
+            user_list = list(user)
+            user_idx = row_idx
+            self._create_row(row_idx, tuple(user_list), user_idx)
 
 class OCRDialogHandler:
     """Обработчик диалогов OCR"""
     
     @staticmethod
+    @staticmethod
     def process_ocr_image(parent: tk.Tk, db_handler: DatabaseHandler) -> None:
-        """Полный цикл обработки изображения"""
         file_path = filedialog.askopenfilename(filetypes=[("Изображения", "*.png *.jpg *.jpeg")])
         if not file_path:
             return
@@ -205,15 +210,13 @@ class OCRDialogHandler:
             crop_win = CropWindow(parent, file_path)
             parent.wait_window(crop_win)
             
+            if crop_win.ocr_data:
+                OCRDialogHandler._update_database(db_handler, crop_win.ocr_data)
+                db_handler._gui_table.refresh()
 
-            if crop_win.cropped_img is None or crop_win.cropped_img.size == 0:
-                return
-                
-            OCRDialogHandler._process_and_show_results(parent, db_handler, file_path)
-            
         except Exception as e:
             messagebox.showerror("Ошибка OCR", str(e))
-
+            
     @staticmethod
     def _process_and_show_results(parent: tk.Tk, db: DatabaseHandler, path: str) -> None:
         """Обработка и отображение результатов"""
@@ -221,6 +224,8 @@ class OCRDialogHandler:
         processing_win.grab_set()
         tk.Label(processing_win, text="Обработка...").pack(pady=20)
         processing_win.after(100, lambda: OCRDialogHandler._finalize_processing(processing_win, db, path))
+        
+        
     
     @staticmethod
     def _finalize_processing(win: tk.Toplevel, db: DatabaseHandler, path: str) -> None:
@@ -234,14 +239,34 @@ class OCRDialogHandler:
 
     @staticmethod
     def _update_database(db: DatabaseHandler, data: List[Dict]) -> None:
-        """Обновление базы данных на основе OCR"""
+        """Обновление базы данных с проверкой структуры"""
+        if not data:
+            messagebox.showwarning("Пустые данные", "Нет данных для сохранения")
+            return
+
         for player in data:
+            # Проверка обязательных полей
+            if 'name' not in player or 'kills' not in player or 'deaths' not in player:
+                print(f"Invalid player data: {player}")
+                continue
+                
+            # Остальная логика обновления
             existing = db.find_user_by_name_or_ocr(player['name'])
             if existing:
                 db.update_user_stats(existing[0], player['kills'], player['deaths'])
             else:
-                db.cursor.execute('INSERT INTO Users (username, kills, deads) VALUES (?,?,?)',
-                               (player['name'], player['kills'], player['deaths']))
+                kills = player.get('kills', 0)
+                deaths = player.get('deaths', 0)
+                kills_deads = kills / deaths if deaths != 0 else 0.0
+                if kills_deads >= 0.75:
+                    to_main = 1
+                else:
+                    to_main = 0
+
+                db.cursor.execute(
+                    'INSERT INTO Users (username, urank, kills, deads, kills_deads, to_main) VALUES (?, ?, ?, ?, ?, ?)',
+                    (player['name'], '-', kills, deaths, kills_deads, to_main)
+                )
         db.connection.commit()
 
 class ApplicationGUI:
@@ -250,8 +275,13 @@ class ApplicationGUI:
     def __init__(self, root: tk.Tk, db_handler: DatabaseHandler):
         self.root = root
         self.db = db_handler
+        self.db._gui_table = None  # Добавляем ссылку на таблицу
+        
         self._setup_window()
         self._create_widgets()
+        
+        # Связываем таблицу с базой данных
+        self.db._gui_table = self.table
 
     def _setup_window(self) -> None:
         """Конфигурация основного окна"""

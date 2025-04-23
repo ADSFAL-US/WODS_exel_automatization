@@ -27,6 +27,7 @@ class DatabaseHandler:
     def __init__(self, db_name: str = 'my_database.db') -> None:
         self.connection = sqlite3.connect(db_name)
         self.cursor = self.connection.cursor()
+        self._gui_table = None  # Добавляем атрибут для связи
         self._initialize_database()
 
     def _initialize_database(self) -> None:
@@ -118,18 +119,28 @@ class DatabaseHandler:
             return None
 
     def update_user_stats(self, user_id: int, kills: int, deaths: int) -> None:
-        """Обновление статистики пользователя"""
+        """Обновление статистики пользователя с пересчетом K/D"""
         try:
+            # Получаем текущие значения
+            current = self.cursor.execute(
+                "SELECT kills, deads FROM Users WHERE id=?", (user_id,)
+            ).fetchone()
+            
+            new_kills = current[0] + kills
+            new_deaths = current[1] + deaths
+            new_kd = new_kills / new_deaths if new_deaths != 0 else 0.0
+            
             self.cursor.execute('''
                 UPDATE Users 
-                SET kills = kills + ?, 
-                    deads = deads + ?
+                SET kills = ?, 
+                    deads = ?,
+                    kills_deads = ?
                 WHERE id = ?
-            ''', (kills, deaths, user_id))
+            ''', (new_kills, new_deaths, new_kd, user_id))
+            
             self.connection.commit()
         except sqlite3.Error as e:
             print(f"Ошибка при обновлении статистики: {e}")
-    #endregion
 
     def close(self) -> None:
         """Закрытие соединения с базой"""

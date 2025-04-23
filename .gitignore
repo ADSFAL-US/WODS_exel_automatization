@@ -4,3 +4,5 @@ testocr.py
 tesseracttest/image.png
 
 match.txt
+debug_cropped.png
+prerprocessed_image.png

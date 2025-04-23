@@ -8,6 +8,7 @@ from PIL import Image, ImageTk
 import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import tkinter.ttk as ttk
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -23,10 +24,14 @@ class ImageProcessor:
     @staticmethod
     def preprocess_image(image: np.ndarray) -> np.ndarray:
         """Предобработка изображения для OCR"""
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        resized = cv2.resize(image, None, fx=4, fy=4)
+        gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
         inverted = cv2.bitwise_not(gray)
-        resized = cv2.resize(inverted, None, fx=2, fy=2)
-        return cv2.GaussianBlur(resized, (3, 3), 0)
+        _, thresh = cv2.threshold(inverted, 100, 255, 0)
+        blured = cv2.GaussianBlur(thresh, (9, 9), 0)
+        cv2.imwrite("./prerprocessed_image.png", blured)
+        return blured
+    
 
 class OCRProcessor:
     """Обработка текста с использованием Tesseract OCR"""
@@ -54,10 +59,12 @@ class CropWindow(tk.Toplevel):
         self.image_path = image_path
         self.points: List[tuple] = []
         self.cropped_img: Optional[np.ndarray] = None
+        self.ocr_data: List[Dict[str, Any]] = []  # Добавлено хранилище данных
         
         self._setup_window()
         self._load_image()
         self._bind_events()
+        self.ocr_data: List[Dict[str, Any]] = []
 
     def _setup_window(self) -> None:
         """Настройка параметров окна"""
@@ -117,49 +124,146 @@ class CropWindow(tk.Toplevel):
             min(y1, y2):max(y1, y2),
             min(x1, x2):max(x1, x2)
         ]
-        self.destroy()
+        
+        # Непосредственная обработка OCR
+        processed_img = ImageProcessor.preprocess_image(self.cropped_img)
+        ocr_text = OCRProcessor.extract_text(processed_img)
+        self.ocr_data = OCRDataHandler.parse_ocr_data(ocr_text)  # Сохраняем данные
+        self._show_ocr_preview()
+        
 
     def _on_close(self) -> None:
         """Обработка закрытия окна"""
         self.cropped_img = None
         self.destroy()
+        
+    def _show_ocr_preview(self) -> None:
+        """Окно проверки распознанных данных"""
+        preview_win = tk.Toplevel(self)
+        preview_win.title("Проверка данных")
+        preview_win.grab_set()
+
+        # Обработка OCR с проверкой ошибок
+        try:
+            processed_img = ImageProcessor.preprocess_image(self.cropped_img)
+            ocr_text = OCRProcessor.extract_text(processed_img)
+            self.ocr_data = OCRDataHandler.parse_ocr_data(ocr_text)
+            
+            # Проверка наличия данных
+            if not self.ocr_data:
+                raise ValueError("Не удалось распознать данные")
+                
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e), parent=preview_win)
+            preview_win.destroy()
+            return
+
+        # Создаем таблицу с данными
+        self._create_preview_table(preview_win)
+
+        # Кнопки действий
+        btn_frame = tk.Frame(preview_win)
+        btn_frame.pack(pady=10)
+
+        def save_and_close():
+            preview_win.destroy()
+            self.destroy()
+
+        tk.Button(btn_frame, 
+                text="Сохранить", 
+                command=save_and_close
+        ).pack(side="left", padx=5)
+        
+        tk.Button(btn_frame, 
+                text="Отмена", 
+                command=lambda: [preview_win.destroy(), self.destroy()]
+        ).pack(side="right", padx=5)
+        
+        
+    def _create_preview_table(self, parent: tk.Toplevel) -> None:
+        """Таблица для предпросмотра данных с прокруткой"""
+        frame = tk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+
+        # Создаем Treeview с прокруткой
+        tree = ttk.Treeview(frame, 
+                          columns=("name", "kills", "deaths", "treasury"),
+                          show="headings",
+                          height=6)
+        
+        # Настройка колонок
+        tree.heading("name", text="Имя игрока")
+        tree.heading("kills", text="Убийства")
+        tree.heading("deaths", text="Смерти")
+        tree.heading("treasury", text="Казна")
+        
+        # Добавляем данные
+        for player in self.ocr_data:
+            tree.insert("", "end", values=(
+                player.get('name', 'N/A'),
+                player.get('kills', 0),
+                player.get('deaths', 0),
+                player.get('treasury', 0)
+            ))
+
+        # Прокрутка
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        
+        tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        
+    def _save_and_close(self, preview_win: tk.Toplevel) -> None:
+        """Финализация сохранения"""
+        preview_win.destroy()
+        self.destroy()
 
 class OCRDataHandler:
+    
     """Обработка и сохранение данных OCR"""
     
-    DATA_PATTERN = re.compile(r"""
-        ^\s*(?:[^\w\s]?\d+)\s+      # Номер места
-        ([^\d]+?)\s+                # Имя игрока
-        (\d+)\s+(\d+)\s+(\d+)\s+   # K/D/A
-        ([\dоO]+)\s+               # Потрачено казны
-        \d+\s+\w+\s*$              # Пропуск остальных полей
-    """, re.VERBOSE | re.IGNORECASE)
+    DATA_PATTERN = re.compile(
+        r"""
+        ^\s*\d+\.?\s+          # Пропускаем номер места
+        ([\w\s_\-—]+?)\s+      # Имя игрока (с пробелами, дефисами, подчеркиваниями и тире)
+        (\d+)\s+               # Убийства (У)
+        (\d+)\s+               # Смерти (С)
+        .*                     # Игнорируем остальные колонки
+        """,
+        re.VERBOSE | re.UNICODE
+    )
 
     @classmethod
     def parse_ocr_data(cls, ocr_text: str) -> List[Dict[str, Any]]:
         data = []
         for line in ocr_text.split('\n'):
             line = line.strip()
-            if not line:  # Пропуск пустых строк
+            if not line:
                 continue
+
+            # Замена тире и других проблемных символов
+            #line = line.replace('—', '-').replace('№', '')
             match = cls.DATA_PATTERN.search(line)
-            if match is not None:  # Явная проверка
+            
+            if match:
                 try:
-                    data.append(cls._process_match(match))
-                except (ValueError, IndexError):
-                    continue
+                    parsed_data = cls._process_match(match)
+                    data.append(parsed_data)
+                except Exception as e:
+                    print(f"Ошибка обработки строки: {line}\n{str(e)}")
+            else:
+                print(f"Не распознано: {line}")
+        print(data)
         return data
 
 
     @classmethod
     def _process_match(cls, match: re.Match) -> Dict[str, Any]:
-        """Обработка совпадения регулярного выражения"""
-        treasury = match.group(5).lower().replace('o', '0').replace('ё', '0')
+        """Извлекаем данные из совпадения."""
         return {
             'name': match.group(1).strip(),
             'kills': int(match.group(2)),
-            'deaths': int(match.group(3)),
-            'treasury': int(treasury) if treasury.isdigit() else 0
+            'deaths': int(match.group(3))
         }
 
     @staticmethod
