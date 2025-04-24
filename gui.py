@@ -18,7 +18,7 @@ class ThemeManager:
         "error_red": "#5e2e2e",
         "success_green": "#2e5e2e",
         "error_fg": "#ff6666",
-        "header_fg": "#ffffff",  # Белый текст заголовков
+        "header_fg": "#000000",  # Белый текст заголовков
         "readonly_fg": "#a0a0a0"
     }
     
@@ -139,7 +139,7 @@ class TableWidget(tk.Frame):
                 
                 
         # Добавляем скрытый ID в последнюю колонку
-        tk.Label(self.table_frame, text=str(user_id)).grid(row=row_idx, column=8)
+        #tk.Label(self.table_frame, text=str(user_id)).grid(row=row_idx, column=8)
         
     
     def _save_row_changes(self, row_idx: int) -> None:

@@ -28,8 +28,8 @@ class CreateDatabaseDialog(tk.Toplevel):
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=5)
         
-        tk.Button(btn_frame, text="Создать", command=self._create_db).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Отмена", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+        tk.Button(btn_frame, text="Создать", command=self._create_db, fg="#ffffff", bg="#11f018").pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Отмена", command=self.destroy, fg="#ffffff", bg="#f01111").pack(side=tk.RIGHT, padx=5)
     
     def _create_db(self):
         name = self.db_name.get().strip()
