@@ -115,12 +115,12 @@ class TableWidget(tk.Frame):
 
     def _create_row(self, row_idx: int, user_data: Tuple, user_idx: int) -> None:
         entries = []
-        user_id = user_data[0]
+        user_id = user_data[0]  # Реальный ID из базы данных
         self._add_delete_button(row_idx, user_id)
+        # Сохраняем оригинальный ID вместо индекса строки
         user_data = list(user_data)
-        user_data[0] = user_idx
+        
         for col in range(7):
-            
             entry = tk.Entry(self.table_frame, width=self.column_widths[col]//10)
             ThemeManager.apply_theme(entry, "entry")
             entry.grid(row=row_idx, column=col, sticky="nsew", padx=1, pady=1)
@@ -128,12 +128,47 @@ class TableWidget(tk.Frame):
             value = self._format_value(col, user_data[col])
             entry.insert("end", value)
             
-            if col in (3, 4):  # Поля Kills/Deads
+            # Привязка к обновлению данных
+            if col in (3, 4):  # Поля, которые можно редактировать
                 entry.bind("<KeyRelease>", lambda e, r=row_idx: self._update_kd(r))
-            elif col in (5, 6):  # Поля K/D и To Main
-                entry.config(state="readonly", fg="#0c17eb")
+                
+            if col in (5, 6):  # Поля K/D и To Main (только для чтения)
+                entry.config(state="readonly", fg="#103ae3")
+                
             
-            entries.append(entry)
+                
+                
+        # Добавляем скрытый ID в последнюю колонку
+        tk.Label(self.table_frame, text=str(user_id)).grid(row=row_idx, column=8)
+        
+    
+    def _save_row_changes(self, row_idx: int) -> None:
+        """Сохраняет изменения строки в БД"""
+        try:
+            # Получаем ID из скрытой колонки
+            user_id = int(self.table_frame.grid_slaves(row=row_idx, column=8)[0].cget("text"))
+            
+            # Собираем данные из полей ввода
+            data = [
+                self.table_frame.grid_slaves(row=row_idx, column=col)[0].get()
+                for col in range(7)
+            ]
+            
+            # Конвертация и валидация
+            db_data = (
+                data[1],  # username
+                data[2],  # urank
+                int(data[3]),  # kills
+                int(data[4]),  # deads
+                float(data[5]),  # kills_deads
+                data[6] == "+",  # to_main
+                user_id  # id
+            )
+            
+            self.db.update_user(db_data)
+            
+        except Exception as e:
+            print(f"Ошибка сохранения строки {row_idx}: {str(e)}")
         
     
     def _update_kd(self, row_idx: int) -> None:
@@ -275,16 +310,20 @@ class ApplicationGUI:
     def __init__(self, root: tk.Tk, db_handler: DatabaseHandler):
         self.root = root
         self.db = db_handler
-        self.db._gui_table = None  # Добавляем ссылку на таблицу
+        self.db._gui_table = None
         
         self._setup_window()
         self._create_widgets()
         
-        # Связываем таблицу с базой данных
         self.db._gui_table = self.table
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+    def on_close(self):
+        """Обработчик закрытия окна"""
+        self.db.close()
+        self.root.destroy()
 
     def _setup_window(self) -> None:
-        """Конфигурация основного окна"""
         self.root.title("Player Statistics Manager")
         self.root.geometry("1280x800")
         ThemeManager.apply_theme(self.root, "root")
@@ -324,30 +363,33 @@ class ApplicationGUI:
             
             for row_idx in range(1, rows):
                 row_data = []
-                # Проходим только по столбцам с данными (исключая кнопку Actions)
-                for col in range(len(self.table.columns) - 1):  
+                for col in range(len(self.table.columns) - 1):  # Исключаем столбец Actions
                     widgets = self.table.table_frame.grid_slaves(row=row_idx, column=col)
-                    
-                    # Обрабатываем только Entry
                     if widgets and isinstance(widgets[0], tk.Entry):
-                        row_data.append(widgets[0].get())
+                        value = widgets[0].get()
+                        row_data.append(value)
                     else:
                         row_data.append("0")  # Значение по умолчанию
                 
-                # Конвертация данных
+                # Проверка наличия всех необходимых данных
+                if len(row_data) < 7:
+                    print(f"Ошибка: Недостаточно данных в строке {row_idx}")
+                    continue
+                
                 try:
+                    # Формирование данных в порядке, ожидаемом методом update_user
                     db_data = (
                         row_data[1],  # username
                         row_data[2],  # urank
                         int(row_data[3]),  # kills
                         int(row_data[4]),  # deads
-                        float(row_data[5]),  # K/D
-                        row_data[6] == "+",  # to_main
-                        int(row_data[0])  # id
+                        float(row_data[5]),  # kills_deads
+                        row_data[6] == "+",  # to_main (преобразование в bool)
+                        int(row_data[0])      # id (должен быть последним для WHERE)
                     )
                     self.db.update_user(db_data)
                 except (ValueError, IndexError) as e:
-                    print(f"Ошибка конвертации: {str(e)}")
+                    print(f"Ошибка конвертации данных в строке {row_idx}: {str(e)}")
                     continue
             
             messagebox.showinfo("Успех", "Данные сохранены")

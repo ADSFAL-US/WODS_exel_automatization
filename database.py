@@ -1,6 +1,7 @@
 import sqlite3
 import random
 from typing import List, Tuple, Optional
+import os
 
 class DatabaseHandler:
     """Обработчик работы с базой данных SQLite"""
@@ -25,9 +26,10 @@ class DatabaseHandler:
     """
 
     def __init__(self, db_name: str = 'my_database.db') -> None:
+        
+        os.makedirs(os.path.dirname(db_name), exist_ok=True)
         self.connection = sqlite3.connect(db_name)
         self.cursor = self.connection.cursor()
-        self._gui_table = None  # Добавляем атрибут для связи
         self._initialize_database()
 
     def _initialize_database(self) -> None:
@@ -142,12 +144,13 @@ class DatabaseHandler:
         except sqlite3.Error as e:
             print(f"Ошибка при обновлении статистики: {e}")
 
-    def close(self) -> None:
+    def close(self):
         """Закрытие соединения с базой"""
         try:
+            self.cursor.close()
             self.connection.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка при закрытии соединения: {e}")
+        except Exception as e:
+            print(f"Ошибка закрытия соединения: {str(e)}")
 
     def __del__(self) -> None:
         """Деструктор для автоматического закрытия соединения"""
