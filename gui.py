@@ -317,6 +317,7 @@ class ApplicationGUI:
         
         self.db._gui_table = self.table
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.iconbitmap("./assets/ico.ico")
         
     def on_close(self):
         """Обработчик закрытия окна"""

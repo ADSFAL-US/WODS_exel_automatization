@@ -6,6 +6,7 @@ def main() -> None:
     try:
         root = StartWindow()
         root.mainloop()
+        
     except Exception as e:
         print(f"Critical error: {str(e)}")
 
