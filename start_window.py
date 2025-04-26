@@ -25,10 +25,11 @@ class CreateDatabaseDialog(tk.Toplevel):
         entry.pack(pady=5)
         entry.bind("<Return>", lambda e: self._create_db())
         
-        btn_frame = tk.Frame(self, background="#383838")
+        btn_frame = tk.Frame(self)
         btn_frame.pack(pady=5)
+        btn_frame.configure(bg="#58416b")
         
-        self.configure(bg="#383838")
+        self.configure(bg="#58416b")
         self.parent.configure(bg="#383838")
         tk.Button(btn_frame, text="Создать", command=self._create_db, fg="#ffffff", bg="#11f018").pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Отмена", command=self.destroy, fg="#ffffff", bg="#f01111").pack(side=tk.RIGHT, padx=5)
@@ -75,11 +76,9 @@ class StartWindow(tk.Tk):
         style = ttk.Style()
         style.theme_use('default')
         
-        style.configure(
-            "Custom.Treeview",
-            background="#383838",  # Цвет фона
-            fieldbackground="#383838",  # Цфон области данных
-            foreground="white"  # Цвет текста
+        style.configure("Custom.Treeview", 
+        background="#58416b",      # Фон списка
+        fieldbackground="#58416b"  # Фон области данных
         )
 
         # Настраиваем цвета для выделенных элементов
@@ -99,7 +98,7 @@ class StartWindow(tk.Tk):
         self.table_list.bind("<Double-1>", self._on_table_selected)
         
         # Центральная кнопка
-        self.configure(bg = "#383838")
+        
         center_frame = tk.Frame(self, bg = "#383838")
         center_frame.pack(expand=True, fill=tk.BOTH)
         
@@ -112,6 +111,10 @@ class StartWindow(tk.Tk):
             fg = "#ffffff"
         )
         self.create_btn.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+        list_frame.configure(bg="#58416b")
+        center_frame.configure(bg="#58416b")
+        self.configure(bg="#58416b")
     
     def refresh_table_list(self):
         """Обновление списка доступных таблиц"""

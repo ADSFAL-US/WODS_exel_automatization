@@ -8,13 +8,13 @@ from database import DatabaseHandler
 class ThemeManager:
     """Управление стилями интерфейса"""
     DARK_THEME = {
-        "bg": "#2e2e2e",
+        "bg": "#58416b",
         "fg": "#ffffff",
-        "entry_bg": "#404040",
+        "entry_bg": "#6b5a7e",
         "button_bg": "#3e3e3e",
         "button_active_bg": "#5e5e5e",
-        "header_bg": "#1e1e1e",
-        "scrollbar_bg": "#3e3e3e",
+        "header_bg": "#473759", 
+        "scrollbar_bg": "#6b5a7e",
         "error_red": "#5e2e2e",
         "success_green": "#2e5e2e",
         "error_fg": "#ff6666",
@@ -328,6 +328,7 @@ class ApplicationGUI:
         self.root.title("Player Statistics Manager")
         self.root.geometry("1280x800")
         ThemeManager.apply_theme(self.root, "root")
+        self.root.configure(bg="#58416b")
 
     def _create_widgets(self) -> None:
         """Создание интерфейса"""
@@ -337,7 +338,7 @@ class ApplicationGUI:
 
     def _create_control_panel(self) -> None:
         """Панель управления"""
-        control_frame = tk.Frame(self.root)
+        control_frame = tk.Frame(self.root, bg="#58416b")
         ThemeManager.apply_theme(control_frame, "frame")
         control_frame.pack(fill="x", pady=5)
         
